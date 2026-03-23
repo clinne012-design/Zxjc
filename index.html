@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>LOGOS · 自学监管系统</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+#root{min-height:100vh}
+input,textarea,select{outline:none}
+textarea{resize:vertical}
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useRef} = React;
+
+const STORAGE_KEY = 'logos_v8_full';
+const today = () => new Date().toISOString().slice(0,10);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const avg = arr => arr && arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
+const clamp = (n,min,max) => Math.max(min, Math.min(max,n));
+const WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
+
+const PH = {
+  1:{name:'奠基',color:'#3b82f6',weeks:12,min:90,words:400,gate:'任意500字文章→15分钟还原论证骨架+找最弱环节，AI逻辑法官无有效性漏洞'},
+  2:{name:'扩展',color:'#10b981',weeks:16,min:90,words:800,gate:'思想史主干口述+1500字原典对话+AI哲学家模式无重大误解'},
+  3:{name:'深化',color:'#f59e0b',weeks:16,min:120,words:1200,gate:'科学哲学综合论证+专精方向研究级阅读+AI盲审评为可参与专业讨论'},
+  4:{name:'整合',color:'#8b5cf6',weeks:20,min:120,words:1500,gate:'48h完成3000字新议题论文+15000字原创论文通过AI答辩+个人思维体系可描述'}
+};
+
+const AI_MODES = [
+  {id:'socratic',label:'苏格拉底',color:'#3b82f6'},
+  {id:'logic',label:'逻辑法官',color:'#ef4444'},
+  {id:'devil',label:'最强对手',color:'#f97316'},
+  {id:'concept',label:'概念审计',color:'#8b5cf6'},
+  {id:'writing',label:'写作外科',color:'#10b981'},
+  {id:'review',label:'综合评委',color:'#f59e0b'}
+];
+
+const SCORE_DIMS = [
+  {k:'logic',l:'逻辑有效性',d:'前提→结论'},
+  {k:'evid',l:'论据质量',d:'支撑充分'},
+  {k:'rebut',l:'反驳处理',d:'处理最强'},
+  {k:'conc',l:'概念精确',d:'核心定义'},
+  {k:'write',l:'表达清晰',d:'结构清晰'}
+];
+
+const REVIEW_TYPES = [
+  {id:'daily',label:'每日复盘',icon:'📖',color:'#3b82f6'},
+  {id:'weekly',label:'每周复盘',icon:'📅',color:'#10b981'},
+  {id:'monthly',label:'每月复盘',icon:'📊',color:'#f59e0b'},
+  {id:'project',label:'项目复盘',icon:'🎯',color:'#8b5cf6'}
+];
+
+const FLAW_TYPES = [
+  '隐含前提未追问','概念滑动/模糊','处理弱反驳','推论步骤无效','文笔掩盖漏洞',
+  '循环论证','诉诸情感','未预见反驳','定义不一致','证据不足','过度概括','其他'
+];
+
+const GATE_DIMS = [
+  {k:'a',l:'口头表达',d:'不查资料口述本阶段核心框架'},
+  {k:'b',l:'书面论证',d:'写出达标论证，AI无有效性漏洞'},
+  {k:'c',l:'AI挑战',d:'AI综合评委评分达标'},
+  {k:'d',l:'反驳处理',d:'处理AI最强反驳而非回避'},
+  {k:'e',l:'迁移应用',d:'在新材料上独立运用工具'}
+];
+
+const PROJECT_PHASES = [
+  {id:'define',label:'1. 问题定义',pct:10,color:'#3b82f6',deliverable:'明确研究问题、评价标准、截止时间',gate:'问题必须具体、可检验、可反驳，不允许空泛主题'},
+  {id:'survey',label:'2. 文献扫描',pct:20,color:'#06b6d4',deliverable:'核心资料清单、立场地图、关键争议点',gate:'必须能说清主要立场、证据、分歧与知识空白'},
+  {id:'build',label:'3. 论证构建',pct:30,color:'#f59e0b',deliverable:'主张、前提链、反对意见表',gate:'主张明确，前提可辩护，至少处理一个最强反驳'},
+  {id:'draft',label:'4. 初稿与答辩',pct:25,color:'#8b5cf6',deliverable:'完整初稿 / 演示稿 + AI答辩记录',gate:'经过强反对与追问后，核心论证仍成立'},
+  {id:'final',label:'5. 定稿与复盘',pct:15,color:'#10b981',deliverable:'最终成品 + 项目复盘',gate:'产出完成，并能总结方法、失误、改进路径'}
+];
+
+const SKILL_TARGETS = [
+  {id:'logic',label:'逻辑有效性'},
+  {id:'evid',label:'论据质量'},
+  {id:'rebut',label:'反驳处理'},
+  {id:'conc',label:'概念精确'},
+  {id:'write',label:'表达清晰'}
+];
+
+const ARTIFACT_TYPES = [
+  {id:'reading',label:'精读笔记'},
+  {id:'outline',label:'论证提纲'},
+  {id:'essay',label:'短文/论文'},
+  {id:'debate',label:'答辩/反驳'},
+  {id:'review',label:'复盘总结'},
+  {id:'other',label:'其他'}
+];
+
+const DEFAULT_SCORES = {logic:70,evid:70,rebut:70,conc:70,write:70};
+const DEFAULT_GATE_SCORES = {a:70,b:70,c:70,d:70,e:70};
+
+function scoreColor(n){ return n>=80 ? '#16a34a' : n>=60 ? '#d97706' : '#dc2626'; }
+function scoreBg(n){ return n>=80 ? '#f0fdf4' : n>=60 ? '#fffbeb' : '#fef2f2'; }
+function logAvg(log){ return avg(SCORE_DIMS.map(d => (log?.scores?.[d.k]) || 0)); }
+function phaseColor(phase){ return PH[phase]?.color || '#64748b'; }
+function dateDiff(a,b){ return Math.round((new Date(a+'T12:00:00') - new Date(b+'T12:00:00')) / 86400000); }
+function startOfMonth(y,m){ return new Date(y,m,1); }
+function endOfMonth(y,m){ return new Date(y,m+1,0); }
+
+function normalizeProject(p={}){
+  return {
+    id: p.id || uid(),
+    name: p.name || '未命名项目',
+    question: p.question || '',
+    deadline: p.deadline || '',
+    color: p.color || '#3b82f6',
+    outputType: p.outputType || 'essay',
+    status: p.status || 'active',
+    currentPhase: PROJECT_PHASES.some(x=>x.id===p.currentPhase) ? p.currentPhase : 'define',
+    currentPhasePct: typeof p.currentPhasePct === 'number' ? clamp(p.currentPhasePct,0,100) : 0,
+    resources: Array.isArray(p.resources) ? p.resources : [],
+    notes: typeof p.notes === 'string' ? p.notes : '',
+    createdDate: p.createdDate || today(),
+    completedDate: p.completedDate || null,
+    finalDeliverable: p.finalDeliverable || '',
+    successCriteria: p.successCriteria || '',
+    failureCriteria: p.failureCriteria || ''
+  };
+}
+
+function initialState(){
+  return {
+    phase:1,
+    week:1,
+    day:1,
+    streak:0,
+    best:0,
+    lastDate:null,
+    gateScores:{1:null,2:null,3:null,4:null},
+    logs:[],
+    reviews:[],
+    flaws:[],
+    plans:{},
+    sessions:0,
+    pieces:0,
+    projects:[]
+  };
+}
+
+function normalizeState(d){
+  const s = {...initialState(), ...(d || {})};
+  s.gateScores = {
+    1: s.gateScores?.[1] ?? null,
+    2: s.gateScores?.[2] ?? null,
+    3: s.gateScores?.[3] ?? null,
+    4: s.gateScores?.[4] ?? null,
+  };
+  s.logs = Array.isArray(s.logs) ? s.logs.map(l => ({
+    id: l.id || uid(),
+    date: l.date || today(),
+    phase: l.phase || 1,
+    week: l.week || 1,
+    day: l.day || 1,
+    scores: {...DEFAULT_SCORES, ...(l.scores || {})},
+    aiModes: Array.isArray(l.aiModes) ? l.aiModes : [],
+    minutes: Number(l.minutes) || 0,
+    words: Number(l.words) || 0,
+    notes: l.notes || '',
+    passed: !!l.passed,
+    sourceType: l.sourceType || 'manual',
+    sourceId: l.sourceId || null,
+    planDate: l.planDate || null,
+    projectId: l.projectId || null,
+  })) : [];
+  s.reviews = Array.isArray(s.reviews) ? s.reviews.map(r => ({
+    id: r.id || uid(),
+    date: r.date || today(),
+    type: r.type || 'daily',
+    title: r.title || '',
+    phase: r.phase || 1,
+    week: r.week || 1,
+    avgScore: typeof r.avgScore === 'number' ? r.avgScore : null,
+    strengths: r.strengths || '',
+    weaknesses: r.weaknesses || '',
+    nextGoal: r.nextGoal || '',
+    verdict: r.verdict || '',
+    refLogIds: Array.isArray(r.refLogIds) ? r.refLogIds : [],
+    refFlawIds: Array.isArray(r.refFlawIds) ? r.refFlawIds : [],
+    projectId: r.projectId || null,
+  })) : [];
+  s.flaws = Array.isArray(s.flaws) ? s.flaws.map(f => ({
+    id: f.id || uid(),
+    date: f.date || today(),
+    type: f.type || '其他',
+    description: f.description || '',
+    resolved: !!f.resolved,
+    resolvedDate: f.resolvedDate || null,
+    sourceLogId: f.sourceLogId || null,
+    sourceTaskId: f.sourceTaskId || null,
+    sourcePlanDate: f.sourcePlanDate || null,
+    projectId: f.projectId || null,
+  })) : [];
+  s.projects = Array.isArray(s.projects) ? s.projects.map(normalizeProject) : [];
+  const plans = {};
+  Object.entries(s.plans || {}).forEach(([date,p]) => {
+    const plan = p || {};
+    plans[date] = {
+      note: typeof plan.note === 'string' ? plan.note : '',
+      tasks: Array.isArray(plan.tasks) ? plan.tasks.map(t => ({
+        id: t.id || uid(),
+        text: typeof t.text === 'string' ? t.text : '',
+        done: !!t.done,
+        expanded: !!t.expanded,
+        phaseId: t.phaseId || null,
+        skillTarget: t.skillTarget || null,
+        artifactType: t.artifactType || null,
+        projectId: t.projectId || null,
+        record: {
+          notes: t.record?.notes || '',
+          minutes: Number(t.record?.minutes) || 0,
+          words: Number(t.record?.words) || 0,
+          passed: !!t.record?.passed,
+          flaws: t.record?.flaws || '',
+        }
+      })) : []
+    };
+  });
+  s.plans = plans;
+  s.sessions = Number(s.sessions) || s.logs.length;
+  s.pieces = Number(s.pieces) || s.logs.length;
+  return s;
+}
+
+function loadState(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return initialState();
+    return normalizeState(JSON.parse(raw));
+  } catch {
+    return initialState();
+  }
+}
+
+function saveState(s){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch{}
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state = {error:null}; }
+  static getDerivedStateFromError(error){ return {error}; }
+  componentDidCatch(error,info){ console.error(error,info); }
+  render(){
+    if(this.state.error){
+      return (
+        <div style={{minHeight:'100vh',padding:24,background:'#f8fafc'}}>
+          <h2 style={{marginBottom:12}}>页面发生错误</h2>
+          <div style={{fontSize:13,color:'#64748b',lineHeight:1.7,marginBottom:16}}>{String(this.state.error?.message || this.state.error)}</div>
+          <button onClick={()=>location.reload()} style={styles.primaryBtn}>刷新页面</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+  function App(){
+  const [state,setState] = useState(loadState);
+  const [view,setView] = useState('dash');
+  const [modal,setModal] = useState(null);
+  const [selectedProjectId,setSelectedProjectId] = useState(null);
+  const saveTimer = useRef(null);
+
+  useEffect(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(()=>saveState(state), 200);
+    return ()=>clearTimeout(saveTimer.current);
+  }, [state]);
+
+  const update = updater => {
+    setState(prev => normalizeState(typeof updater === 'function' ? updater(structuredClone ? structuredClone(prev) : JSON.parse(JSON.stringify(prev))) : {...prev, ...updater}));
+  };
+
+  const phase = PH[state.phase];
+  const recentLogs = useMemo(() => [...state.logs].sort((a,b)=>b.date.localeCompare(a.date)), [state.logs]);
+  const todayLogged = state.logs.some(l => l.date === today());
+
+  return (
+    <div style={styles.root}>
+      <Header state={state} />
+      <Nav view={view} setView={v => { setView(v); if(v !== 'projects') setSelectedProjectId(null); }} />
+      <main style={styles.main}>
+        {view === 'dash' && <Dashboard state={state} phase={phase} recentLogs={recentLogs} todayLogged={todayLogged} setView={setView} setModal={setModal} />}
+        {view === 'projects' && <ProjectsView state={state} update={update} setModal={setModal} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} />}
+        {view === 'plan' && <PlanView state={state} update={update} setModal={setModal} />}
+        {view === 'cal' && <CalendarView state={state} setModal={setModal} />}
+        {view === 'log' && <LogsView state={state} update={update} setModal={setModal} recentLogs={recentLogs} />}
+        {view === 'review' && <ReviewsView state={state} update={update} setModal={setModal} />}
+        {view === 'flaws' && <FlawsView state={state} update={update} setModal={setModal} />}
+        {view === 'gate' && <GateView state={state} update={update} setModal={setModal} />}
+        {view === 'analytics' && <AnalyticsView state={state} />}
+        {view === 'history' && <HistoryView state={state} />}
+      </main>
+
+      {modal?.type === 'project' && <ProjectModal state={state} update={update} project={modal.project || null} onClose={()=>setModal(null)} />}
+      {modal?.type === 'log' && <LogModal state={state} update={update} editing={modal.log || null} presetDate={modal.date || today()} presetProjectId={modal.projectId || null} onClose={()=>setModal(null)} />}
+      {modal?.type === 'review' && <ReviewModal state={state} update={update} reviewType={modal.reviewType || 'daily'} review={modal.review || null} projectId={modal.projectId || null} onClose={()=>setModal(null)} />}
+      {modal?.type === 'flaw' && <FlawModal state={state} update={update} flaw={modal.flaw || null} projectId={modal.projectId || null} onClose={()=>setModal(null)} />}
+      {modal?.type === 'gate' && <GateModal state={state} update={update} phaseTarget={modal.phaseTarget || state.phase} onClose={()=>setModal(null)} />}
+      {modal?.type === 'confirm' && <ConfirmModal title={modal.title || '确认操作'} message={modal.message} onOk={() => { modal.onOk?.(); setModal(null); }} onClose={()=>setModal(null)} />}
+    </div>
+  );
+}
+
+function Header({state}){
+  return (
+    <header style={styles.header}>
+      <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+        <span style={{fontSize:20,fontWeight:800,letterSpacing:'.12em',color:'#1e40af'}}>LOGOS</span>
+        <span style={{fontSize:11,color:'#94a3b8'}}>自学监管系统</span>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <span style={{fontSize:12,color:'#64748b'}}><span style={{fontWeight:700,color:phaseColor(state.phase)}}>P{state.phase}</span> W{state.week} D{state.day}</span>
+        <span style={{fontSize:12,padding:'2px 9px',borderRadius:16,border:'1px solid ' + (state.streak >= 7 ? '#fbbf24' : '#e2e8f0'),background: state.streak >= 7 ? '#fffbeb' : '#fff',color: state.streak >= 7 ? '#d97706' : '#64748b'}}>🔥{state.streak}天</span>
+      </div>
+    </header>
+  );
+}
+
+function Nav({view,setView}){
+  const items = [
+    ['dash','仪表盘'],['projects','📁项目'],['plan','规划'],['cal','日历'],['log','训练日志'],['review','复盘'],['flaws','缺陷'],['gate','考核'],['analytics','📊分析'],['history','历史']
+  ];
+  return (
+    <nav style={styles.nav}>
+      {items.map(([id,label]) => (
+        <button key={id} onClick={()=>setView(id)} style={{...styles.navBtn, ...(view===id ? styles.navBtnActive : {})}}>{label}</button>
+      ))}
+    </nav>
+  );
+}
+
+function Dashboard({state,phase,recentLogs,todayLogged,setView,setModal}){
+  const weekLogs = state.logs.filter(l => l.phase === state.phase && l.week === state.week);
+  const weekAvg = weekLogs.length ? avg(weekLogs.map(logAvg)) : 0;
+  const unresolvedFlaws = state.flaws.filter(f => !f.resolved).length;
+  const activeProjects = state.projects.filter(p => p.status === 'active');
+  const todayPlan = state.plans[today()] || {tasks:[]};
+  const planDone = todayPlan.tasks.filter(t=>t.done).length;
+  const recentScores = recentLogs.slice(0,8).map(logAvg).reverse();
+  const phaseProgress = Math.round(state.week / phase.weeks * 100);
+
+  return (
+    <div>
+      <Card style={{marginBottom:12,borderLeft:'4px solid ' + phase.color}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <Label text="当前阶段" />
+            <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+              <span style={{fontSize:24,fontWeight:800,color:phase.color}}>Phase {state.phase}</span>
+              <span style={{fontSize:15,color:'#475569'}}>{phase.name}</span>
+            </div>
+          </div>
+          <Small text={`第${state.week}周 / ${phase.weeks}周`} />
+        </div>
+        <Progress value={phaseProgress} color={phase.color} style={{marginTop:10}} />
+        <div style={{fontSize:12,color:'#64748b',marginTop:8,lineHeight:1.7}}>{phase.gate}</div>
+      </Card>
+
+      <div style={styles.grid2}>
+        <StatCard title="今日训练" value={todayLogged ? '✓' : '○'} sub={todayLogged ? '已记录' : `目标 ${phase.min}min · ${phase.words}字`} color={todayLogged ? '#16a34a' : '#dc2626'} action={!todayLogged ? <PrimaryButton label="＋记录今日" onClick={()=>setModal({type:'log',date:today()})} /> : null} />
+        <StatCard title="本周均分" value={weekLogs.length ? weekAvg : '—'} sub={`${weekLogs.length}次训练`} color={weekLogs.length ? scoreColor(weekAvg) : '#94a3b8'} footer={<MiniLine points={recentScores} color="#3b82f6" />} />
+        <StatCard title="今日规划" value={`${planDone}/${todayPlan.tasks.length || 0}`} sub={todayPlan.tasks.length ? `完成率 ${Math.round(planDone / todayPlan.tasks.length * 100)}%` : '今日暂无任务'} color={todayPlan.tasks.length && planDone === todayPlan.tasks.length ? '#16a34a' : '#d97706'} action={<GhostButton label="去规划 →" onClick={()=>setView('plan')} />} />
+        <StatCard title="进行中项目" value={activeProjects.length} sub={activeProjects[0] ? `当前重点：${activeProjects[0].name}` : '暂无项目'} color={activeProjects.length ? activeProjects[0].color : '#94a3b8'} action={<GhostButton label="项目页 →" onClick={()=>setView('projects')} />} />
+      </div>
+
+      {unresolvedFlaws > 0 && (
+        <Card border="#fca5a5" style={{background:'#fff5f5',marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <Label text="未解决思维缺陷" />
+              <div style={{fontSize:20,fontWeight:800,color:'#dc2626'}}>{unresolvedFlaws} 个</div>
+            </div>
+            <GhostButton label="查看 →" onClick={()=>setView('flaws')} />
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <Label text="最近训练" />
+        {recentLogs.length === 0 ? <Empty text="暂无训练记录" /> : recentLogs.slice(0,5).map(log => (
+          <div key={log.id} style={styles.rowSep}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#1e293b'}}>{log.date} {log.projectId && <span style={{fontSize:11,color:'#64748b'}}>· {(state.projects.find(p=>p.id===log.projectId)?.name)||'项目'}</span>}</div>
+              <Small text={`${log.minutes}min · ${log.words}字 · ${log.passed ? '✓达标' : '✗未达标'}`} />
+            </div>
+            <div style={{fontSize:18,fontWeight:800,color:scoreColor(logAvg(log))}}>{logAvg(log)}</div>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+function ProjectsView({state,update,setModal,selectedProjectId,setSelectedProjectId}){
+  const active = state.projects.filter(p=>p.status==='active');
+  const done = state.projects.filter(p=>p.status==='done');
+  const selected = state.projects.find(p=>p.id===selectedProjectId);
+
+  if(selected){
+    return <ProjectDetail project={selected} state={state} update={update} setModal={setModal} onBack={()=>setSelectedProjectId(null)} />;
+  }
+
+  return (
+    <div>
+      <PageHeader title="我的项目" sub="项目 = 明确问题 + 明确交付物 + 明确成功/失败标准" action={<PrimaryButton label="＋新建项目" onClick={()=>setModal({type:'project'})} />} />
+      {state.projects.length === 0 && (
+        <Card style={{textAlign:'center',padding:40}}>
+          <div style={{fontSize:34,marginBottom:10}}>📁</div>
+          <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>还没有项目</div>
+          <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.7,marginBottom:16}}>不要把顶级训练做成散乱练习。围绕一个问题建立证据链、产出链、答辩链。</div>
+          <PrimaryButton label="创建第一个项目" onClick={()=>setModal({type:'project'})} />
+        </Card>
+      )}
+
+      {active.length > 0 && <SectionTitle text="进行中" />}
+      {active.map(p => <ProjectCard key={p.id} project={p} state={state} onOpen={()=>setSelectedProjectId(p.id)} onEdit={()=>setModal({type:'project',project:p})} />)}
+
+      {done.length > 0 && <SectionTitle text="已完成" color="#16a34a" />}
+      {done.map(p => <ProjectCard key={p.id} project={p} state={state} onOpen={()=>setSelectedProjectId(p.id)} onEdit={()=>setModal({type:'project',project:p})} />)}
+    </div>
+  );
+}
+
+function ProjectCard({project,state,onOpen,onEdit}){
+  const logs = state.logs.filter(l=>l.projectId===project.id);
+  const totalMinutes = logs.reduce((s,l)=>s+(l.minutes||0),0);
+  const rawIndex = PROJECT_PHASES.findIndex(x=>x.id===project.currentPhase);
+  const phaseIndex = rawIndex === -1 ? 0 : rawIndex;
+  const currentPhase = PROJECT_PHASES[phaseIndex];
+  const progress = Math.round((phaseIndex + (project.currentPhasePct || 0)/100) / PROJECT_PHASES.length * 100);
+  const daysLeft = project.deadline ? dateDiff(project.deadline, today()) : null;
+  return (
+    <Card style={{marginBottom:10,borderLeft:'4px solid ' + project.color,cursor:'pointer'}} onClick={onOpen}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4}}>
+            <div style={{fontSize:15,fontWeight:700}}>{project.name}</div>
+            {project.status === 'done' && <Tag text="已完成" color="#16a34a" bg="#f0fdf4" border="#86efac" />}
+          </div>
+          {project.question && <div style={{fontSize:12,color:'#64748b',marginBottom:6}}>{project.question}</div>}
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+            <Small text={`⏱ ${Math.round(totalMinutes/60*10)/10}h`} />
+            <Small text={`📝 ${logs.length}次`} />
+            <Small text={currentPhase.label} style={{color:project.color}} />
+          </div>
+          <Progress value={progress} color={project.color} style={{marginTop:8}} />
+        </div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+          {daysLeft !== null && <Small text={daysLeft >= 0 ? `${daysLeft}天后截止` : `已超期${Math.abs(daysLeft)}天`} style={{color:daysLeft < 7 ? '#dc2626' : '#64748b'}} />}
+          <GhostButton label="编辑" onClick={e => { e.stopPropagation(); onEdit(); }} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+  function ProjectDetail({project,state,update,setModal,onBack}){
+  const [tab,setTab] = useState('overview');
+  const logs = state.logs.filter(l=>l.projectId===project.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const flaws = state.flaws.filter(f=>f.projectId===project.id);
+  const reviews = state.reviews.filter(r=>r.projectId===project.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const totalMinutes = logs.reduce((s,l)=>s+(l.minutes||0),0);
+  const totalWords = logs.reduce((s,l)=>s+(l.words||0),0);
+  const rawIndex = PROJECT_PHASES.findIndex(x=>x.id===project.currentPhase);
+  const phaseIndex = rawIndex === -1 ? 0 : rawIndex;
+  const phase = PROJECT_PHASES[phaseIndex];
+  const daysLeft = project.deadline ? dateDiff(project.deadline, today()) : null;
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+        <GhostButton label="← 返回" onClick={onBack} />
+        <div style={{flex:1}}>
+          <div style={{fontSize:18,fontWeight:700,color:'#1e293b'}}>{project.name}</div>
+          {project.question && <div style={{fontSize:12,color:'#64748b',marginTop:2}}>{project.question}</div>}
+        </div>
+        <GhostButton label="编辑" onClick={()=>setModal({type:'project',project})} />
+      </div>
+
+      <div style={styles.grid4}>
+        <MiniMetric title="总投入" value={`${Math.round(totalMinutes/60*10)/10}h`} color="#3b82f6" />
+        <MiniMetric title="总字数" value={totalWords} color="#10b981" />
+        <MiniMetric title="训练次数" value={logs.length} color="#8b5cf6" />
+        <MiniMetric title="剩余天数" value={daysLeft===null?'—':daysLeft>=0?`${daysLeft}d`:`超期${Math.abs(daysLeft)}d`} color={daysLeft !== null && daysLeft < 7 ? '#dc2626' : '#d97706'} />
+      </div>
+
+      <div style={styles.tabbar}>
+        {[
+          ['overview','进度'],['timeline','时间线'],['quality','质量'],['resources','资料'],['notes','笔记']
+        ].map(([id,label]) => (
+          <button key={id} onClick={()=>setTab(id)} style={{...styles.tabBtn, ...(tab===id ? styles.tabBtnActive : {})}}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <div>
+          <Card style={{marginBottom:12,borderLeft:'4px solid ' + project.color}}>
+            <Label text="项目硬约束" />
+            <div style={{marginTop:8,fontSize:13,lineHeight:1.8}}>
+              <div><b>最终交付物：</b>{project.finalDeliverable || '未填写'}</div>
+              <div><b>成功标准：</b>{project.successCriteria || '未填写'}</div>
+              <div><b>失败标准：</b>{project.failureCriteria || '未填写'}</div>
+            </div>
+          </Card>
+
+          <Card style={{marginBottom:12}}>
+            <Label text="当前阶段" />
+            <div style={{fontSize:18,fontWeight:800,color:phase.color,marginTop:4}}>{phase.label}</div>
+            <div style={{fontSize:12,color:'#64748b',marginTop:6,lineHeight:1.7}}>
+              <div><b>阶段交付：</b>{phase.deliverable}</div>
+              <div><b>通关标准：</b>{phase.gate}</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginTop:10}}>
+              <input type="range" min="0" max="100" value={project.currentPhasePct || 0} style={{flex:1,accentColor:phase.color}} onChange={e=>update(s=>({
+                ...s,
+                projects:s.projects.map(p=>p.id===project.id ? {...p,currentPhasePct:+e.target.value} : p)
+              }))} />
+              <span style={{fontSize:12,fontWeight:700,color:phase.color,minWidth:36}}>{project.currentPhasePct || 0}%</span>
+            </div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+              {phaseIndex > 0 && <GhostButton label="← 上一阶段" onClick={()=>update(s=>({
+                ...s, projects:s.projects.map(p=>p.id===project.id ? {...p,currentPhase:PROJECT_PHASES[phaseIndex-1].id,currentPhasePct:100} : p)
+              }))} />}
+              {phaseIndex < PROJECT_PHASES.length-1 && <PrimaryButton label="进入下一阶段 →" onClick={()=>update(s=>({
+                ...s, projects:s.projects.map(p=>p.id===project.id ? {...p,currentPhase:PROJECT_PHASES[phaseIndex+1].id,currentPhasePct:0} : p)
+              }))} />}
+              {phaseIndex === PROJECT_PHASES.length-1 && project.status !== 'done' && <PrimaryButton label="完成项目" onClick={()=>update(s=>({
+                ...s, projects:s.projects.map(p=>p.id===project.id ? {...p,status:'done',completedDate:today()} : p)
+              }))} style={{background:'#16a34a',borderColor:'#16a34a'}} />}
+            </div>
+          </Card>
+
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+            <PrimaryButton label="＋记录项目训练" onClick={()=>setModal({type:'log',date:today(),projectId:project.id})} />
+            <GhostButton label="⚠ 记录项目缺陷" onClick={()=>setModal({type:'flaw',projectId:project.id})} />
+            <GhostButton label="🎯 项目复盘" onClick={()=>setModal({type:'review',reviewType:'project',projectId:project.id})} />
+            <DangerButton label="删除项目" onClick={()=>setModal({type:'confirm',title:'删除项目',message:`确认删除项目「${project.name}」？不会删除已生成的日志/缺陷。`,onOk:()=>update(s=>({...s,projects:s.projects.filter(p=>p.id!==project.id)}))})} />
+          </div>
+
+          {logs.length > 0 && <Card style={{marginBottom:12}}>
+            <Label text={`最近训练（${logs.length}条）`} />
+            {logs.slice(0,5).map(log => (
+              <div key={log.id} style={styles.rowSep}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>{log.date}</div>
+                  <Small text={`${log.minutes}min · ${log.words}字 · ${log.passed?'✓达标':'✗未达标'}`} />
+                </div>
+                <div style={{fontSize:16,fontWeight:800,color:scoreColor(logAvg(log))}}>{logAvg(log)}</div>
+              </div>
+            ))}
+          </Card>}
+
+          {flaws.length > 0 && <Card border="#fca5a5" style={{background:'#fff5f5'}}>
+            <Label text={`未解决缺陷（${flaws.filter(f=>!f.resolved).length}）`} />
+            {flaws.filter(f=>!f.resolved).slice(0,5).map(f => (
+              <div key={f.id} style={{fontSize:12,color:'#991b1b',padding:'4px 0'}}>• [{f.type}] {f.description}</div>
+            ))}
+          </Card>}
+        </div>
+      )}
+
+      {tab === 'timeline' && (
+        <Card>
+          <Label text="时间线" />
+          {logs.length === 0 ? <Empty text="暂无训练记录" /> : logs.map(log => (
+            <div key={log.id} style={styles.rowSep}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700}}>{log.date}</div>
+                <div style={{fontSize:12,color:'#64748b'}}>{log.notes || '无备注'}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:14,fontWeight:800,color:scoreColor(logAvg(log))}}>{logAvg(log)}</div>
+                <Small text={`${log.minutes}min`} />
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {tab === 'quality' && (
+        <div>
+          <Card style={{marginBottom:12}}>
+            <Label text="五维能力均分" />
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+              {SCORE_DIMS.map(d => {
+                const score = logs.length ? avg(logs.map(l => l.scores?.[d.k] || 0)) : 0;
+                return (
+                  <div key={d.k} style={{flex:'1 1 80px',textAlign:'center',padding:'8px 6px',borderRadius:8,background:scoreBg(score)}}>
+                    <div style={{fontSize:18,fontWeight:800,color:scoreColor(score)}}>{score}</div>
+                    <Small text={d.l} />
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card>
+            <Label text="项目复盘" />
+            {reviews.length === 0 ? <Empty text="暂无项目复盘" /> : reviews.map(r => (
+              <div key={r.id} style={styles.rowSep}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700}}>{r.date} · {REVIEW_TYPES.find(t=>t.id===r.type)?.label || '复盘'}</div>
+                  <div style={{fontSize:12,color:'#64748b'}}>{r.title || r.nextGoal || '无标题'}</div>
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:r.verdict==='通过' ? '#16a34a' : r.verdict==='重复' ? '#d97706' : '#dc2626'}}>{r.verdict || '—'}</div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {tab === 'resources' && <ProjectResources project={project} update={update} />}
+      {tab === 'notes' && <ProjectNotes project={project} update={update} />}
+    </div>
+  );
+}
+
+function ProjectResources({project,update}){
+  const [draft,setDraft] = useState({type:'book',title:'',notes:''});
+  const types = [{id:'book',icon:'📚'},{id:'paper',icon:'📄'},{id:'article',icon:'🔗'},{id:'video',icon:'🎬'},{id:'other',icon:'📌'}];
+  const addResource = () => {
+    if(!draft.title.trim()) return;
+    update(s => ({
+      ...s,
+      projects:s.projects.map(p => p.id===project.id ? {...p, resources:[...(p.resources||[]), {id:uid(),date:today(),...draft}]} : p)
+    }));
+    setDraft({type:'book',title:'',notes:''});
+  };
+  return (
+    <div>
+      <Card style={{marginBottom:12}}>
+        <Label text="新增资料" />
+        <div style={{display:'flex',gap:6,margin:'8px 0',flexWrap:'wrap'}}>
+          {types.map(t => <button key={t.id} onClick={()=>setDraft(p=>({...p,type:t.id}))} style={{...styles.chip,cursor:'pointer',borderColor:draft.type===t.id?'#3b82f6':'#e2e8f0',color:draft.type===t.id?'#1d4ed8':'#64748b'}}>{t.icon}</button>)}
+        </div>
+        <input value={draft.title} onChange={e=>setDraft(p=>({...p,title:e.target.value}))} style={{...styles.input,marginBottom:8}} placeholder="书名 / 论文 / 资料标题" />
+        <textarea value={draft.notes} onChange={e=>setDraft(p=>({...p,notes:e.target.value}))} rows={3} style={{...styles.textarea,marginBottom:8}} placeholder="这份资料为什么重要？核心信息是什么？" />
+        <PrimaryButton label="添加资料" onClick={addResource} />
+      </Card>
+      <Card>
+        <Label text="资料列表" />
+        {(project.resources || []).length === 0 ? <Empty text="暂无资料" /> : (project.resources || []).map(r => (
+          <div key={r.id} style={styles.rowSep}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>{r.title}</div>
+              <div style={{fontSize:12,color:'#64748b'}}>{r.notes || '无摘要'}</div>
+              <Small text={r.date} />
+            </div>
+            <DangerButton label="删除" onClick={()=>update(s=>({
+              ...s,
+              projects:s.projects.map(p => p.id===project.id ? {...p, resources:(p.resources||[]).filter(x=>x.id!==r.id)} : p)
+            }))} />
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+function ProjectNotes({project,update}){
+  return (
+    <Card>
+      <Label text="项目笔记" />
+      <textarea value={project.notes || ''} onChange={e=>update(s=>({
+        ...s,
+        projects:s.projects.map(p => p.id===project.id ? {...p, notes:e.target.value} : p)
+      }))} rows={16} style={{...styles.textarea,marginTop:8,minHeight:280}} placeholder="记录核心论点、反驳、证据链、待解决问题。" />
+    </Card>
+  );
+}
+  function PlanView({state,update,setModal}){
+  const [selectedDate,setSelectedDate] = useState(today());
+  const plan = state.plans[selectedDate] || {tasks:[],note:''};
+  const projects = state.projects.filter(p=>p.status==='active');
+
+  const patchPlan = updater => update(s => {
+    const current = s.plans[selectedDate] || {tasks:[],note:''};
+    return {...s, plans:{...s.plans, [selectedDate]: updater(current)}};
+  });
+
+  const addTask = (preset={}) => patchPlan(p => ({
+    ...p,
+    tasks:[...p.tasks, {
+      id: uid(),
+      text:preset.text || '',
+      done:false,
+      expanded:true,
+      phaseId:preset.phaseId || null,
+      skillTarget:preset.skillTarget || null,
+      artifactType:preset.artifactType || null,
+      projectId:preset.projectId || null,
+      record:{notes:'',minutes:0,words:0,passed:false,flaws:''}
+    }]
+  }));
+
+  const updateTask = (taskId, patch) => patchPlan(p => ({
+    ...p,
+    tasks:p.tasks.map(t => t.id===taskId ? {...t, ...patch} : t)
+  }));
+
+  const updateTaskRecord = (taskId, patch) => patchPlan(p => ({
+    ...p,
+    tasks:p.tasks.map(t => t.id===taskId ? {...t, record:{...t.record, ...patch}} : t)
+  }));
+
+  const removeTask = taskId => {
+    update(s => {
+      const hadLog = s.logs.some(l => l.sourceId === taskId);
+      return {
+        ...s,
+        plans:{
+          ...s.plans,
+          [selectedDate]: {
+            ...(s.plans[selectedDate] || {tasks:[],note:''}),
+            tasks:(s.plans[selectedDate]?.tasks || []).filter(t=>t.id!==taskId)
+          }
+        },
+        logs:s.logs.filter(l=>l.sourceId!==taskId),
+        flaws:s.flaws.filter(f=>f.sourceTaskId!==taskId),
+        sessions: hadLog ? Math.max(0, s.sessions-1) : s.sessions,
+        pieces: hadLog ? Math.max(0, s.pieces-1) : s.pieces,
+      };
+    });
+  };
+
+  const syncTaskEvidence = task => {
+    const record = task.record || {notes:'',minutes:0,words:0,passed:false,flaws:''};
+    const existingLog = state.logs.find(l=>l.sourceId===task.id);
+    const hasEvidence = record.notes.trim() || record.minutes > 0 || record.words > 0;
+
+    update(s => {
+      let logs = s.logs.filter(l=>l.sourceId!==task.id);
+      let flaws = s.flaws.filter(f=>f.sourceTaskId!==task.id);
+      let sessions = s.sessions;
+      let pieces = s.pieces;
+      if(existingLog) {
+        sessions = Math.max(0, sessions-1);
+        pieces = Math.max(0, pieces-1);
+      }
+      if(task.done && hasEvidence){
+        logs = [...logs, {
+          id: existingLog?.id || uid(),
+          date: selectedDate,
+          phase: s.phase,
+          week: s.week,
+          day: s.day,
+          scores:{...DEFAULT_SCORES},
+          aiModes:[],
+          minutes:record.minutes || 0,
+          words:record.words || 0,
+          notes:`[${task.text}] ${record.notes || ''}`,
+          passed:!!record.passed,
+          sourceType:'task',
+          sourceId:task.id,
+          planDate:selectedDate,
+          projectId:task.projectId || null,
+        }];
+        sessions += 1;
+        pieces += 1;
+      }
+      if(task.done && record.flaws && record.flaws.trim()){
+        flaws = [...flaws, {
+          id: uid(),
+          date:selectedDate,
+          type:'其他',
+          description:`[${task.text}] ${record.flaws}`,
+          resolved:false,
+          resolvedDate:null,
+          sourceTaskId:task.id,
+          sourcePlanDate:selectedDate,
+          projectId:task.projectId || null,
+        }];
+      }
+      return {...s, logs, flaws, sessions, pieces};
+    });
+  };
+
+  const templates = [
+    {text:'阅读原典30分钟',artifactType:'reading'},
+    {text:'写论证短文400字',artifactType:'essay',skillTarget:'write'},
+    {text:'AI苏格拉底训练',artifactType:'debate',skillTarget:'conc'},
+    {text:'AI逻辑法官训练',artifactType:'debate',skillTarget:'logic'},
+    {text:'AI概念审计训练',artifactType:'debate',skillTarget:'conc'},
+    {text:'AI最强对手训练',artifactType:'debate',skillTarget:'rebut'},
+    {text:'AI写作外科训练',artifactType:'review',skillTarget:'write'},
+    {text:'周度复盘',artifactType:'review'}
+  ];
+
+  const total = plan.tasks.length;
+  const done = plan.tasks.filter(t=>t.done).length;
+  const selectedProject = id => state.projects.find(p=>p.id===id);
+
+  return (
+    <div>
+      <PageHeader title="学习规划" sub="任务不是待办，而是训练单元：必须绑定能力目标、项目阶段、产出类型。" />
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
+        <input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} style={styles.input} />
+        <Card style={{padding:'10px 12px',minWidth:130}}>
+          <Label text="完成度" />
+          <div style={{fontSize:18,fontWeight:800,color: total && done===total ? '#16a34a' : '#d97706'}}>{done}/{total}</div>
+        </Card>
+      </div>
+
+      <Card style={{marginBottom:12}}>
+        <Label text="快速模板" />
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}}>
+          {templates.map(t => <button key={t.text} onClick={()=>addTask(t)} style={{...styles.chip,cursor:'pointer',borderColor:'#bfdbfe',color:'#1d4ed8',background:'#eff6ff'}}>＋{t.text}</button>)}
+        </div>
+      </Card>
+
+      <Card style={{marginBottom:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <Label text="任务列表" />
+          <PrimaryButton label="＋添加任务" onClick={()=>addTask()} />
+        </div>
+        {plan.tasks.length === 0 ? <Empty text="当天还没有任务" /> : plan.tasks.map(task => (
+          <div key={task.id} style={{borderBottom:'1px solid #f1f5f9',padding:'10px 0'}}>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <button onClick={()=>{ const next = !task.done; updateTask(task.id,{done:next}); syncTaskEvidence({...task,done:next}); }} style={{width:24,height:24,borderRadius:6,border:'2px solid ' + (task.done ? '#16a34a' : '#cbd5e1'),background:task.done ? '#dcfce7' : '#fff',color:'#16a34a'}}>{task.done ? '✓' : ''}</button>
+              <input value={task.text} onChange={e=>updateTask(task.id,{text:e.target.value})} style={{...styles.input,flex:1,padding:'6px 8px',textDecoration:task.done?'line-through':'none',color:task.done?'#94a3b8':'#1e293b'}} placeholder="任务内容" />
+              <GhostButton label={task.expanded ? '▲' : '▼'} onClick={()=>updateTask(task.id,{expanded:!task.expanded})} />
+              <DangerButton label="删除" onClick={()=>removeTask(task.id)} />
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6,marginLeft:32}}>
+              {task.projectId && <Tag text={`📁 ${selectedProject(task.projectId)?.name || '项目'}`} color={selectedProject(task.projectId)?.color || '#3b82f6'} bg={(selectedProject(task.projectId)?.color || '#3b82f6')+'11'} border={(selectedProject(task.projectId)?.color || '#3b82f6')+'44'} />}
+              {task.phaseId && <Tag text={PROJECT_PHASES.find(p=>p.id===task.phaseId)?.label || task.phaseId} color="#8b5cf6" bg="#f5f3ff" border="#ddd6fe" />}
+              {task.skillTarget && <Tag text={SKILL_TARGETS.find(s=>s.id===task.skillTarget)?.label || task.skillTarget} color="#d97706" bg="#fffbeb" border="#fde68a" />}
+              {task.artifactType && <Tag text={ARTIFACT_TYPES.find(a=>a.id===task.artifactType)?.label || task.artifactType} color="#0f766e" bg="#f0fdfa" border="#99f6e4" />}
+            </div>
+            {task.expanded && (
+              <div style={{marginLeft:32,marginTop:10,padding:12,border:'1px solid #e2e8f0',borderRadius:8,background:'#f8fafc'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                  <div>
+                    <FieldLabel text="绑定项目" />
+                    <select value={task.projectId || ''} onChange={e=>updateTask(task.id,{projectId:e.target.value || null})} style={styles.input}>
+                      <option value="">不绑定</option>
+                      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel text="绑定项目阶段" />
+                    <select value={task.phaseId || ''} onChange={e=>updateTask(task.id,{phaseId:e.target.value || null})} style={styles.input}>
+                      <option value="">未指定</option>
+                      {PROJECT_PHASES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel text="能力目标" />
+                    <select value={task.skillTarget || ''} onChange={e=>updateTask(task.id,{skillTarget:e.target.value || null})} style={styles.input}>
+                      <option value="">未指定</option>
+                      {SKILL_TARGETS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel text="产出类型" />
+                    <select value={task.artifactType || ''} onChange={e=>updateTask(task.id,{artifactType:e.target.value || null})} style={styles.input}>
+                      <option value="">未指定</option>
+                      {ARTIFACT_TYPES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <FieldLabel text="训练记录（勾选完成后自动生成日志/缺陷）" />
+                <textarea value={task.record?.notes || ''} onChange={e=>updateTaskRecord(task.id,{notes:e.target.value})} rows={3} style={{...styles.textarea,marginBottom:8}} placeholder="今天从这个任务中获得了什么？" />
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}}>
+                  <input type="number" value={task.record?.minutes || ''} onChange={e=>updateTaskRecord(task.id,{minutes:Number(e.target.value) || 0})} style={styles.input} placeholder="分钟" />
+                  <input type="number" value={task.record?.words || ''} onChange={e=>updateTaskRecord(task.id,{words:Number(e.target.value) || 0})} style={styles.input} placeholder="字数" />
+                  <button onClick={()=>updateTaskRecord(task.id,{passed:!task.record?.passed})} style={{...styles.ghostBtn,borderColor:task.record?.passed?'#86efac':'#fca5a5',color:task.record?.passed?'#16a34a':'#dc2626'}}>{task.record?.passed ? '✓ 达标' : '✗ 未达标'}</button>
+                </div>
+                <textarea value={task.record?.flaws || ''} onChange={e=>updateTaskRecord(task.id,{flaws:e.target.value})} rows={2} style={styles.textarea} placeholder="发现的具体思维缺陷。完成后会自动归档。" />
+              </div>
+            )}
+          </div>
+        ))}
+      </Card>
+
+      <Card>
+        <Label text="今日备注" />
+        <textarea value={plan.note} onChange={e=>patchPlan(p=>({...p,note:e.target.value}))} rows={3} style={{...styles.textarea,marginTop:8}} placeholder="今天的总策略、风险、重点。" />
+      </Card>
+    </div>
+  );
+}
+
+function CalendarView({state,setModal}){
+  const now = new Date();
+  const [ym,setYm] = useState({y:now.getFullYear(),m:now.getMonth()});
+  const [selectedDate,setSelectedDate] = useState(null);
+  const first = startOfMonth(ym.y, ym.m);
+  const last = endOfMonth(ym.y, ym.m);
+  const blanks = Array.from({length:first.getDay()}, (_,i)=>`b-${i}`);
+  const days = Array.from({length:last.getDate()}, (_,i)=>new Date(ym.y,ym.m,i+1));
+  const logsByDate = {};
+  state.logs.forEach(l => { if(!logsByDate[l.date]) logsByDate[l.date] = []; logsByDate[l.date].push(l); });
+  return (
+    <div>
+      <PageHeader title="训练日历" sub="查看哪天有训练、哪天有规划。" />
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <GhostButton label="‹" onClick={()=>setYm(p=>{ const d=new Date(p.y,p.m-1,1); return {y:d.getFullYear(),m:d.getMonth()}; })} />
+        <div style={{fontWeight:700}}>{ym.y}年 {ym.m+1}月</div>
+        <GhostButton label="›" onClick={()=>setYm(p=>{ const d=new Date(p.y,p.m+1,1); return {y:d.getFullYear(),m:d.getMonth()}; })} />
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4,marginBottom:4}}>{WEEKDAYS.map(d=><div key={d} style={{textAlign:'center',fontSize:11,color:'#94a3b8'}}>{d}</div>)}</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}}>
+        {blanks.map(x => <div key={x}></div>)}
+        {days.map(d => {
+          const ds = d.toISOString().slice(0,10);
+          const logs = logsByDate[ds] || [];
+          const score = logs.length ? avg(logs.map(logAvg)) : null;
+          const hasPlan = (state.plans[ds]?.tasks || []).length > 0;
+          const isToday = ds === today();
+          const selected = ds === selectedDate;
+          return (
+            <button key={ds} onClick={()=>setSelectedDate(selected ? null : ds)} style={{aspectRatio:'1',borderRadius:8,border:'1px solid ' + (selected ? '#3b82f6' : isToday ? '#93c5fd' : logs.length ? scoreColor(score)+'44' : '#e2e8f0'),background:selected ? '#dbeafe' : logs.length ? scoreBg(score) : '#fff',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+              <span style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?'#1d4ed8':'#374151'}}>{d.getDate()}</span>
+              {score !== null && <span style={{fontSize:9,fontWeight:700,color:scoreColor(score)}}>{score}</span>}
+              {hasPlan && <span style={{fontSize:8,color:'#d97706'}}>●</span>}
+            </button>
+          );
+        })}
+      </div>
+      {selectedDate && (
+        <Card style={{marginTop:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <div style={{fontWeight:700}}>{selectedDate} · {WEEKDAYS[new Date(selectedDate+'T12:00:00').getDay()]}</div>
+            <PrimaryButton label="＋补录训练" onClick={()=>setModal({type:'log',date:selectedDate})} />
+          </div>
+          {(logsByDate[selectedDate] || []).length === 0 ? <Empty text="当天暂无训练记录" /> : (logsByDate[selectedDate] || []).map(log => (
+            <div key={log.id} style={styles.rowSep}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700}}>{log.notes ? log.notes.slice(0,40) : '训练记录'}</div>
+                <Small text={`${log.minutes}min · ${log.words}字`} />
+              </div>
+              <div style={{fontSize:16,fontWeight:800,color:scoreColor(logAvg(log))}}>{logAvg(log)}</div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function LogsView({state,update,setModal,recentLogs}){
+  return (
+    <div>
+      <PageHeader title="训练日志" sub={`共 ${state.logs.length} 条记录`} action={<PrimaryButton label="＋新增" onClick={()=>setModal({type:'log',date:today()})} />} />
+            <Card style={{marginBottom:12,background:'#f0f9ff',borderColor:'#bae6fd'}}>
+        <div style={{fontSize:12,color:'#0369a1',lineHeight:1.7}}>补录历史训练时，日期可以回填；项目日志会自动进入对应项目的统计。</div>
+      </Card>
+      {recentLogs.length === 0 ? <Empty text="暂无训练记录" /> : recentLogs.map(log => (
+        <Card key={log.id} border={scoreColor(logAvg(log))+'44'} style={{marginBottom:10}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
+                <div style={{fontWeight:700}}>{log.date}</div>
+                <Small text={`P${log.phase} W${log.week} D${log.day}`} />
+                {log.projectId && <Tag text={`📁 ${(state.projects.find(p=>p.id===log.projectId)?.name)||'项目'}`} color={state.projects.find(p=>p.id===log.projectId)?.color || '#3b82f6'} bg={(state.projects.find(p=>p.id===log.projectId)?.color || '#3b82f6')+'11'} border={(state.projects.find(p=>p.id===log.projectId)?.color || '#3b82f6')+'44'} />}
+                {log.sourceType === 'task' && <Tag text="来自任务" color="#1d4ed8" bg="#eff6ff" border="#bfdbfe" />}
+              </div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                {SCORE_DIMS.map(d => (
+                  <div key={d.k} style={{padding:'4px 7px',borderRadius:4,background:scoreBg(log.scores?.[d.k] || 0)}}>
+                    <div style={{fontSize:12,fontWeight:700,color:scoreColor(log.scores?.[d.k] || 0)}}>{log.scores?.[d.k] || 0}</div>
+                    <div style={{fontSize:9,color:'#64748b'}}>{d.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:6}}>
+                <Small text={`⏱ ${log.minutes}min`} />
+                <Small text={`✍ ${log.words}字`} />
+                <Small text={log.passed ? '✓达标' : '✗未达标'} style={{color:log.passed?'#16a34a':'#dc2626'}} />
+              </div>
+              {log.notes && <div style={{fontSize:12,color:'#64748b',lineHeight:1.6,fontStyle:'italic'}}>{log.notes}</div>}
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+              <div style={{fontSize:20,fontWeight:800,color:scoreColor(logAvg(log))}}>{logAvg(log)}</div>
+              <GhostButton label="编辑" onClick={()=>setModal({type:'log',log})} />
+              <DangerButton label="删除" onClick={()=>setModal({type:'confirm',title:'删除训练记录',message:'确认删除此训练记录？',onOk:()=>update(s=>({
+                ...s,
+                logs:s.logs.filter(l=>l.id!==log.id),
+                sessions:Math.max(0,s.sessions-1),
+                pieces:Math.max(0,s.pieces-1)
+              }))})} />
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ReviewsView({state,update,setModal}){
+  const [filter,setFilter] = useState('all');
+  const list = [...state.reviews].sort((a,b)=>b.date.localeCompare(a.date)).filter(r => filter === 'all' ? true : r.type === filter);
+  return (
+    <div>
+      <PageHeader title="复盘记录" sub="复盘必须绑定证据：日志、缺陷、下一步动作。" action={<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{REVIEW_TYPES.map(t=><PrimaryButton key={t.id} label={`${t.icon} ${t.label}`} onClick={()=>setModal({type:'review',reviewType:t.id})} style={{background:t.color+'11',borderColor:t.color+'44',color:t.color,fontSize:11,padding:'5px 10px'}} />)}</div>} />
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+        <button onClick={()=>setFilter('all')} style={{...styles.chip,cursor:'pointer',borderColor:filter==='all'?'#3b82f6':'#e2e8f0',color:filter==='all'?'#1d4ed8':'#64748b',background:filter==='all'?'#eff6ff':'#fff'}}>全部</button>
+        {REVIEW_TYPES.map(t => <button key={t.id} onClick={()=>setFilter(t.id)} style={{...styles.chip,cursor:'pointer',borderColor:filter===t.id?t.color:'#e2e8f0',color:filter===t.id?t.color:'#64748b',background:filter===t.id?t.color+'11':'#fff'}}>{t.icon} {t.label}</button>)}
+      </div>
+      {list.length === 0 ? <Empty text="暂无复盘记录" /> : list.map(r => {
+        const rt = REVIEW_TYPES.find(t=>t.id===r.type) || REVIEW_TYPES[0];
+        const project = r.projectId ? state.projects.find(p=>p.id===r.projectId) : null;
+        return (
+          <Card key={r.id} border={rt.color+'44'} style={{marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                  <div style={{fontSize:16}}>{rt.icon}</div>
+                  <div style={{fontWeight:700}}>{r.title || rt.label}</div>
+                  <Tag text={rt.label} color={rt.color} bg={rt.color+'11'} border={rt.color+'44'} />
+                </div>
+                {project && <div style={{fontSize:11,color:project.color,marginBottom:4}}>📁 {project.name}</div>}
+                <Small text={`${r.date} · P${r.phase} W${r.week}${typeof r.avgScore==='number' ? ' · 平均分 '+r.avgScore : ''}`} />
+                {r.strengths && <div style={{fontSize:13,color:'#16a34a',marginTop:8}}>✓ {r.strengths}</div>}
+                {r.weaknesses && <div style={{fontSize:13,color:'#dc2626',marginTop:6}}>✗ {r.weaknesses}</div>}
+                {r.nextGoal && <div style={{fontSize:13,color:'#d97706',marginTop:6}}>→ {r.nextGoal}</div>}
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+                <div style={{fontSize:12,fontWeight:700,color:r.verdict==='通过' ? '#16a34a' : r.verdict==='重复' ? '#d97706' : '#dc2626'}}>{r.verdict || '—'}</div>
+                <GhostButton label="编辑" onClick={()=>setModal({type:'review',reviewType:r.type,review:r,projectId:r.projectId || null})} />
+                <DangerButton label="删除" onClick={()=>setModal({type:'confirm',title:'删除复盘',message:'确认删除此复盘？',onOk:()=>update(s=>({...s,reviews:s.reviews.filter(x=>x.id!==r.id)}))})} />
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function FlawsView({state,update,setModal}){
+  const unresolved = state.flaws.filter(f=>!f.resolved);
+  const resolved = state.flaws.filter(f=>f.resolved);
+  const flawMap = {};
+  state.flaws.forEach(f => flawMap[f.type] = (flawMap[f.type] || 0) + 1);
+  const top = Object.entries(flawMap).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  return (
+    <div>
+      <PageHeader title="思维缺陷档案" sub="缺陷描述必须具体，不能写空话。" action={<PrimaryButton label="＋记录缺陷" onClick={()=>setModal({type:'flaw'})} />} />
+      {top.length > 0 && <Card border="#fca5a5" style={{background:'#fff5f5',marginBottom:12}}>
+        <Label text="高频缺陷 Top 3" />
+        {top.map(([t,c]) => <div key={t} style={styles.rowSep}><div style={{fontSize:13}}>{t}</div><div style={{fontSize:13,fontWeight:700,color:'#dc2626'}}>{c}次</div></div>)}
+      </Card>}
+      {unresolved.length > 0 && <SectionTitle text={`未解决（${unresolved.length}）`} color="#dc2626" />}
+      {unresolved.map(f => <FlawCard key={f.id} flaw={f} state={state} update={update} setModal={setModal} />)}
+      {resolved.length > 0 && <SectionTitle text={`已解决（${resolved.length}）`} color="#16a34a" />}
+      {resolved.map(f => <FlawCard key={f.id} flaw={f} state={state} update={update} setModal={setModal} />)}
+      {state.flaws.length === 0 && <Empty text="暂无缺陷记录" />}
+    </div>
+  );
+}
+
+function FlawCard({flaw,state,update,setModal}){
+  const project = flaw.projectId ? state.projects.find(p=>p.id===flaw.projectId) : null;
+  return (
+    <Card border={flaw.resolved ? '#86efac' : '#fca5a5'} style={{marginBottom:10,background:flaw.resolved ? '#f0fdf4' : '#fff'}}>
+      <div style={{display:'flex',justifyContent:'space-between',gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginBottom:6}}>
+            <Tag text={flaw.type} color="#dc2626" bg="#fef2f2" border="#fca5a5" />
+            {project && <Tag text={`📁 ${project.name}`} color={project.color} bg={project.color+'11'} border={project.color+'44'} />}
+            {flaw.resolved && <Tag text="已解决" color="#16a34a" bg="#f0fdf4" border="#86efac" />}
+          </div>
+          <div style={{fontSize:13,lineHeight:1.7,color:'#374151'}}>{flaw.description}</div>
+          <Small text={`${flaw.date}${flaw.resolvedDate ? ' · 解决于 ' + flaw.resolvedDate : ''}`} />
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <GhostButton label={flaw.resolved ? '重新打开' : '标记解决'} onClick={()=>update(s=>({...s,flaws:s.flaws.map(f=>f.id===flaw.id ? {...f,resolved:!f.resolved,resolvedDate:!f.resolved ? today() : null} : f)}))} />
+          <GhostButton label="编辑" onClick={()=>setModal({type:'flaw',flaw})} />
+          <DangerButton label="删除" onClick={()=>setModal({type:'confirm',title:'删除缺陷',message:'确认删除此缺陷记录？',onOk:()=>update(s=>({...s,flaws:s.flaws.filter(f=>f.id!==flaw.id)}))})} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function GateView({state,update,setModal}){
+  return (
+    <div>
+      <PageHeader title="节点考核" sub="Gate 不是感觉良好，而是必须绑定真实产出、反驳和修订证据。" />
+      {[1,2,3,4].map(p => {
+        const phase = PH[p];
+        const score = state.gateScores[p];
+        const locked = p > state.phase;
+        return (
+          <Card key={p} border={(score ? scoreColor(score) : phase.color)+'44'} style={{marginBottom:12,opacity:locked ? .45 : 1,borderLeft:'4px solid ' + phase.color}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:phase.color,marginBottom:6}}>Phase {p} · {phase.name}</div>
+                <div style={{fontSize:12,color:'#64748b',lineHeight:1.7}}>{phase.gate}</div>
+              </div>
+              <div style={{textAlign:'right',minWidth:88}}>
+                {score != null ? (
+                  <>
+                    <div style={{fontSize:26,fontWeight:800,color:scoreColor(score)}}>{score}</div>
+                    <div style={{fontSize:11,color:score>=80 ? '#16a34a' : '#dc2626'}}>{score>=80 ? '通过' : '未过'}</div>
+                  </>
+                ) : <Small text={locked ? '🔒 未开放' : '待考'} />}
+              </div>
+            </div>
+            {!locked && <div style={{display:'flex',gap:8,marginTop:10}}>
+              <PrimaryButton label={score != null ? '重新考核' : '开始考核'} onClick={()=>setModal({type:'gate',phaseTarget:p})} />
+              {score != null && <DangerButton label="清除结果" onClick={()=>update(s=>({...s,gateScores:{...s.gateScores,[p]:null}}))} />}
+            </div>}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnalyticsView({state}){
+  const [projectId,setProjectId] = useState(null);
+  const selectedProject = projectId ? state.projects.find(p=>p.id===projectId) : null;
+  const logs = projectId ? state.logs.filter(l=>l.projectId===projectId) : state.logs;
+  const flaws = projectId ? state.flaws.filter(f=>f.projectId===projectId) : state.flaws;
+  const totalMinutes = logs.reduce((s,l)=>s+(l.minutes||0),0);
+  const totalWords = logs.reduce((s,l)=>s+(l.words||0),0);
+  const avgScore = logs.length ? avg(logs.map(logAvg)) : 0;
+  const passRate = logs.length ? Math.round(logs.filter(l=>l.passed).length / logs.length * 100) : 0;
+  const days = new Set(logs.map(l=>l.date)).size;
+  const dimData = SCORE_DIMS.map(d => ({...d, avg: logs.length ? avg(logs.map(l=>l.scores?.[d.k] || 0)) : 0}));
+  const flawMap = {};
+  flaws.forEach(f => flawMap[f.type] = (flawMap[f.type] || 0) + 1);
+  const trend = [...logs].sort((a,b)=>a.date.localeCompare(b.date)).slice(-20).map(logAvg);
+  return (
+    <div>
+      <PageHeader title="数据分析" sub="分析投入、产出、评分结构和缺陷模式。" />
+      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+        <button onClick={()=>setProjectId(null)} style={{...styles.chip,cursor:'pointer',borderColor:!projectId?'#3b82f6':'#e2e8f0',color:!projectId?'#1d4ed8':'#64748b',background:!projectId?'#eff6ff':'#fff'}}>全部</button>
+        {state.projects.map(p => <button key={p.id} onClick={()=>setProjectId(p.id)} style={{...styles.chip,cursor:'pointer',borderColor:projectId===p.id?p.color:'#e2e8f0',color:projectId===p.id?p.color:'#64748b',background:projectId===p.id?p.color+'11':'#fff'}}>📁 {p.name}</button>)}
+      </div>
+      {selectedProject && <Card border={selectedProject.color+'44'} style={{marginBottom:12,borderLeft:'4px solid '+selectedProject.color,background:selectedProject.color+'08'}}>
+        <div style={{fontWeight:700,color:selectedProject.color}}>{selectedProject.name}</div>
+        <div style={{fontSize:12,color:'#64748b',marginTop:4}}>{selectedProject.question || '无项目问题描述'}</div>
+      </Card>}
+      <div style={styles.grid3}>
+        <MiniMetric title="总投入" value={`${Math.round(totalMinutes/60*10)/10}h`} color="#3b82f6" />
+        <MiniMetric title="总字数" value={totalWords} color="#10b981" />
+        <MiniMetric title="训练天数" value={days} color="#8b5cf6" />
+        <MiniMetric title="训练次数" value={logs.length} color="#f59e0b" />
+        <MiniMetric title="综合均分" value={avgScore} color={scoreColor(avgScore)} />
+        <MiniMetric title="达标率" value={`${passRate}%`} color={passRate >= 70 ? '#16a34a' : '#dc2626'} />
+      </div>
+      {trend.length > 1 && <Card style={{marginBottom:12}}><Label text="评分趋势" /><div style={{marginTop:10}}><MiniLine points={trend} color={selectedProject?.color || '#3b82f6'} wide /></div></Card>}
+      <Card style={{marginBottom:12}}>
+        <Label text="五维能力均分" />
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+          {dimData.map(d => <div key={d.k} style={{flex:'1 1 80px',padding:'8px 6px',textAlign:'center',borderRadius:8,background:scoreBg(d.avg)}}><div style={{fontSize:18,fontWeight:800,color:scoreColor(d.avg)}}>{d.avg}</div><Small text={d.l} /></div>)}
+        </div>
+      </Card>
+      <Card>
+        <Label text="缺陷分布" />
+        {Object.keys(flawMap).length === 0 ? <Empty text="暂无缺陷数据" /> : Object.entries(flawMap).sort((a,b)=>b[1]-a[1]).map(([t,c]) => {
+          const pct = Math.round(c / flaws.length * 100);
+          return <div key={t} style={{marginTop:10}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontSize:12}}>{t}</span><span style={{fontSize:12,fontWeight:700,color:'#dc2626'}}>{c}次 ({pct}%)</span></div><Progress value={pct} color="#dc2626" /></div>;
+        })}
+      </Card>
+    </div>
+  );
+}
+
+function HistoryView({state}){
+  const byWeek = {};
+  state.logs.forEach(l => {
+    const k = `P${l.phase}W${l.week}`;
+    if(!byWeek[k]) byWeek[k] = [];
+    byWeek[k].push(logAvg(l));
+  });
+  const weeks = Object.entries(byWeek).map(([key,vals]) => ({key,avg:avg(vals)}));
+  return (
+    <div>
+      <PageHeader title="历史概览" sub="宏观查看阶段推进、周均分和累计产出。" />
+      <div style={styles.grid3}>
+        <MiniMetric title="总训练次数" value={state.sessions} color="#3b82f6" />
+        <MiniMetric title="总产出次数" value={state.pieces} color="#10b981" />
+        <MiniMetric title="最长连续" value={state.best} color="#f59e0b" />
+      </div>
+      <Card>
+        <Label text="周均分趋势" />
+        {weeks.length === 0 ? <Empty text="暂无数据" /> : <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'flex-end',marginTop:12}}>{weeks.map(w => <div key={w.key} style={{textAlign:'center',minWidth:34}}><div style={{width:28,height:Math.max(6,w.avg*.45),background:scoreColor(w.avg),borderRadius:4,margin:'0 auto'}}></div><div style={{fontSize:9,color:'#94a3b8',marginTop:2}}>{w.key}</div><div style={{fontSize:9,color:scoreColor(w.avg),fontWeight:700}}>{w.avg}</div></div>)}</div>}
+      </Card>
+    </div>
+  );
+}
+  function ProjectModal({state,update,project,onClose}){
+  const editing = !!project;
+  const [name,setName] = useState(project?.name || '');
+  const [question,setQuestion] = useState(project?.question || '');
+  const [deadline,setDeadline] = useState(project?.deadline || '');
+  const [color,setColor] = useState(project?.color || '#3b82f6');
+  const [outputType,setOutputType] = useState(project?.outputType || 'essay');
+  const [finalDeliverable,setFinalDeliverable] = useState(project?.finalDeliverable || '');
+  const [successCriteria,setSuccessCriteria] = useState(project?.successCriteria || '');
+  const [failureCriteria,setFailureCriteria] = useState(project?.failureCriteria || '');
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899'];
+  const outputTypes = [
+    {id:'essay',label:'论文/报告'},{id:'analysis',label:'分析报告'},{id:'presentation',label:'演讲/展示'},{id:'creative',label:'创作作品'},{id:'research',label:'研究报告'},{id:'other',label:'其他'}
+  ];
+  const submit = () => {
+    if(!name.trim() || !finalDeliverable.trim() || !successCriteria.trim() || !failureCriteria.trim()) return;
+    const next = {
+      ...(project || {}),
+      id: project?.id || uid(),
+      name,
+      question,
+      deadline,
+      color,
+      outputType,
+      finalDeliverable,
+      successCriteria,
+      failureCriteria,
+      status: project?.status || 'active',
+      currentPhase: project?.currentPhase || 'define',
+      currentPhasePct: typeof project?.currentPhasePct === 'number' ? project.currentPhasePct : 0,
+      resources: project?.resources || [],
+      notes: project?.notes || '',
+      createdDate: project?.createdDate || today(),
+      completedDate: project?.completedDate || null,
+    };
+    update(s => ({
+      ...s,
+      projects: editing ? s.projects.map(p=>p.id===next.id ? next : p) : [...s.projects, next]
+    }));
+    onClose();
+  };
+  return (
+    <Modal title={editing ? '编辑项目' : '新建项目'} onClose={onClose}>
+      <FieldGroup label="项目名称（必填）"><input value={name} onChange={e=>setName(e.target.value)} style={styles.input} placeholder="例：自由意志的哲学论证" /></FieldGroup>
+      <FieldGroup label="核心研究问题"><textarea value={question} onChange={e=>setQuestion(e.target.value)} rows={2} style={styles.textarea} placeholder="我到底要回答什么问题？" /></FieldGroup>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <FieldGroup label="目标产出类型"><select value={outputType} onChange={e=>setOutputType(e.target.value)} style={styles.input}>{outputTypes.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></FieldGroup>
+        <FieldGroup label="截止日期"><input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} style={styles.input} /></FieldGroup>
+      </div>
+      <FieldGroup label="最终交付物（必填）"><input value={finalDeliverable} onChange={e=>setFinalDeliverable(e.target.value)} style={styles.input} placeholder="例：3000字论文 / 15分钟答辩演示" /></FieldGroup>
+      <FieldGroup label="成功标准（必填）"><textarea value={successCriteria} onChange={e=>setSuccessCriteria(e.target.value)} rows={2} style={styles.textarea} placeholder="例：必须提出清晰主张、处理两个强反驳。" /></FieldGroup>
+      <FieldGroup label="失败标准（必填）"><textarea value={failureCriteria} onChange={e=>setFailureCriteria(e.target.value)} rows={2} style={styles.textarea} placeholder="例：问题仍模糊、无法回应最强反驳。" /></FieldGroup>
+      <FieldGroup label="项目颜色"><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{colors.map(c => <button key={c} onClick={()=>setColor(c)} style={{width:28,height:28,borderRadius:'50%',background:c,border:'3px solid ' + (color===c ? '#1e293b' : 'transparent')}}></button>)}</div></FieldGroup>
+      <div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><PrimaryButton label={editing ? '保存修改' : '创建项目'} onClick={submit} /></div>
+    </Modal>
+  );
+}
+
+function LogModal({state,update,editing,presetDate,presetProjectId,onClose}){
+  const currentPhase = PH[state.phase];
+  const [date,setDate] = useState(editing?.date || presetDate || today());
+  const [scores,setScores] = useState({...DEFAULT_SCORES, ...(editing?.scores || {})});
+  const [aiModes,setAiModes] = useState(editing?.aiModes || []);
+  const [minutes,setMinutes] = useState(editing?.minutes ?? currentPhase.min);
+  const [words,setWords] = useState(editing?.words ?? currentPhase.words);
+  const [notes,setNotes] = useState(editing?.notes || '');
+  const [projectId,setProjectId] = useState(editing?.projectId || presetProjectId || '');
+  const total = avg(Object.values(scores));
+  const passed = minutes >= currentPhase.min * 0.8 && words >= currentPhase.words * 0.8 && total >= 60;
+  const activeProjects = state.projects.filter(p=>p.status==='active');
+  const submit = () => {
+    const log = {
+      id: editing?.id || uid(),
+      date,
+      phase: editing?.phase || state.phase,
+      week: editing?.week || state.week,
+      day: editing?.day || state.day,
+      scores,
+      aiModes,
+      minutes:Number(minutes) || 0,
+      words:Number(words) || 0,
+      notes,
+      passed,
+      sourceType: editing?.sourceType || 'manual',
+      sourceId: editing?.sourceId || null,
+      planDate: editing?.planDate || null,
+      projectId: projectId || null,
+    };
+    if(editing){
+      update(s => ({...s, logs:s.logs.map(l=>l.id===log.id ? log : l)}));
+    } else {
+      update(s => ({
+        ...s,
+        logs:[...s.logs, log],
+        sessions:s.sessions + 1,
+        pieces:s.pieces + 1,
+        lastDate: date === today() ? today() : s.lastDate,
+        streak: date === today() ? (s.lastDate === today() ? s.streak : (s.lastDate && dateDiff(today(), s.lastDate) === 1 ? s.streak + 1 : 1)) : s.streak,
+        best: date === today() ? Math.max(s.best, s.lastDate === today() ? s.streak : (s.lastDate && dateDiff(today(), s.lastDate) === 1 ? s.streak + 1 : 1)) : s.best,
+        day: date === today() ? s.day + 1 : s.day,
+      }));
+    }
+    onClose();
+  };
+  return (
+    <Modal title={editing ? '编辑训练记录' : '记录训练'} onClose={onClose}>
+      <FieldGroup label="训练日期"><input type="date" value={date} max={today()} onChange={e=>setDate(e.target.value)} style={styles.input} /></FieldGroup>
+      {activeProjects.length > 0 && <FieldGroup label="关联项目（可选）"><select value={projectId} onChange={e=>setProjectId(e.target.value)} style={styles.input}><option value="">不关联</option>{activeProjects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></FieldGroup>}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <FieldGroup label={`时长(分钟) 目标${currentPhase.min}`}><input type="number" value={minutes} onChange={e=>setMinutes(e.target.value)} style={styles.input} /></FieldGroup>
+        <FieldGroup label={`字数 目标${currentPhase.words}`}><input type="number" value={words} onChange={e=>setWords(e.target.value)} style={styles.input} /></FieldGroup>
+      </div>
+      <FieldGroup label="使用 AI 模式"><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{AI_MODES.map(m => <button key={m.id} onClick={()=>setAiModes(p=>p.includes(m.id)?p.filter(x=>x!==m.id):[...p,m.id])} style={{...styles.chip,cursor:'pointer',borderColor:aiModes.includes(m.id)?m.color:'#e2e8f0',color:aiModes.includes(m.id)?m.color:'#64748b',background:aiModes.includes(m.id)?m.color+'11':'#fff'}}>{m.label}</button>)}</div></FieldGroup>
+      <FieldGroup label="五维评分">
+        {SCORE_DIMS.map(d => <div key={d.k} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{fontSize:12,color:'#64748b'}}>{d.l}</span><span style={{fontSize:12,fontWeight:700,color:scoreColor(scores[d.k])}}>{scores[d.k]}</span></div><input type="range" min="0" max="100" value={scores[d.k]} onChange={e=>setScores(p=>({...p,[d.k]:+e.target.value}))} style={{width:'100%',accentColor:scoreColor(scores[d.k])}} /></div>)}
+        <div style={{textAlign:'center',fontSize:28,fontWeight:800,color:scoreColor(total),background:scoreBg(total),padding:8,borderRadius:8}}>{total}</div>
+      </FieldGroup>
+      <FieldGroup label="反思笔记"><textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={4} style={styles.textarea} placeholder="今天的关键收获、AI指出的漏洞、下次修正方向。" /></FieldGroup>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:13,fontWeight:700,color:passed?'#16a34a':'#dc2626'}}>{passed ? '✓ 达标' : '✗ 未达标'}</span><div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><PrimaryButton label={editing ? '保存修改' : '保存记录'} onClick={submit} /></div></div>
+    </Modal>
+  );
+}
+
+function ReviewModal({state,update,reviewType,review,projectId,onClose}){
+  const editing = !!review;
+  const typeInfo = REVIEW_TYPES.find(t=>t.id===reviewType) || REVIEW_TYPES[0];
+  const scopedLogs = state.logs.filter(l => projectId ? l.projectId === projectId : true).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
+  const scopedFlaws = state.flaws.filter(f => !f.resolved && (projectId ? f.projectId === projectId : true)).slice(0,20);
+  const [title,setTitle] = useState(review?.title || '');
+  const [strengths,setStrengths] = useState(review?.strengths || '');
+  const [weaknesses,setWeaknesses] = useState(review?.weaknesses || '');
+  const [nextGoal,setNextGoal] = useState(review?.nextGoal || '');
+  const [verdict,setVerdict] = useState(review?.verdict || '通过');
+  const [refLogIds,setRefLogIds] = useState(review?.refLogIds || []);
+  const [refFlawIds,setRefFlawIds] = useState(review?.refFlawIds || []);
+  const avgScore = refLogIds.length ? avg(refLogIds.map(id => logAvg(state.logs.find(l=>l.id===id)))) : null;
+  const submit = () => {
+    if(!nextGoal.trim()) return;
+    const item = {
+      id: review?.id || uid(),
+      date: review?.date || today(),
+      type: reviewType,
+      title,
+      phase: review?.phase || state.phase,
+      week: review?.week || state.week,
+      avgScore,
+      strengths,
+      weaknesses,
+      nextGoal,
+      verdict,
+      refLogIds,
+      refFlawIds,
+      projectId: projectId || review?.projectId || null,
+    };
+    update(s => ({
+      ...s,
+      reviews: editing ? s.reviews.map(r=>r.id===item.id ? item : r) : [...s.reviews, item]
+    }));
+    onClose();
+  };
+  return (
+    <Modal title={`${typeInfo.icon} ${editing ? '编辑' : '新建'}${typeInfo.label}`} onClose={onClose}>
+      <FieldGroup label="复盘标题"><input value={title} onChange={e=>setTitle(e.target.value)} style={styles.input} placeholder={`${typeInfo.label} · ${today()}`} /></FieldGroup>
+      <FieldGroup label="本次亮点"><textarea value={strengths} onChange={e=>setStrengths(e.target.value)} rows={2} style={styles.textarea} placeholder="具体进步在哪里？" /></FieldGroup>
+      <FieldGroup label="本次薄弱点"><textarea value={weaknesses} onChange={e=>setWeaknesses(e.target.value)} rows={2} style={styles.textarea} placeholder="具体问题在哪里？" /></FieldGroup>
+      <FieldGroup label="下一步动作（必填）"><input value={nextGoal} onChange={e=>setNextGoal(e.target.value)} style={styles.input} placeholder="下一步必须做什么。" /></FieldGroup>
+      <FieldGroup label={`关联训练记录（至少建议2条，已选${refLogIds.length}条）`}>
+        <div style={styles.selectorBox}>{scopedLogs.length === 0 ? <Empty text="没有可选训练记录" /> : scopedLogs.map(l => <label key={l.id} style={styles.checkRow}><input type="checkbox" checked={refLogIds.includes(l.id)} onChange={()=>setRefLogIds(p=>p.includes(l.id)?p.filter(x=>x!==l.id):[...p,l.id])} /><span style={{fontSize:12,color:'#374151'}}>{l.date} · {logAvg(l)}分 · {l.notes ? l.notes.slice(0,24) : '训练记录'}</span></label>)}</div>
+      </FieldGroup>
+      <FieldGroup label={`关联缺陷（已选${refFlawIds.length}条）`}>
+        <div style={styles.selectorBox}>{scopedFlaws.length === 0 ? <Empty text="没有可选未解决缺陷" /> : scopedFlaws.map(f => <label key={f.id} style={styles.checkRow}><input type="checkbox" checked={refFlawIds.includes(f.id)} onChange={()=>setRefFlawIds(p=>p.includes(f.id)?p.filter(x=>x!==f.id):[...p,f.id])} /><span style={{fontSize:12,color:'#374151'}}>{f.type} · {f.description.slice(0,32)}</span></label>)}</div>
+      </FieldGroup>
+      <FieldGroup label="评定结果"><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['通过','重复','需强化'].map(v => <button key={v} onClick={()=>setVerdict(v)} style={{...styles.chip,cursor:'pointer',borderColor:verdict===v?(v==='通过'?'#16a34a':v==='重复'?'#d97706':'#dc2626'):'#e2e8f0',color:verdict===v?(v==='通过'?'#16a34a':v==='重复'?'#d97706':'#dc2626'):'#64748b',background:verdict===v?(v==='通过'?'#f0fdf4':v==='重复'?'#fffbeb':'#fef2f2'):'#fff'}}>{v}</button>)}</div></FieldGroup>
+      <div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><PrimaryButton label={editing ? '保存修改' : '保存复盘'} onClick={submit} /></div>
+    </Modal>
+  );
+}
+
+function FlawModal({state,update,flaw,projectId,onClose}){
+  const editing = !!flaw;
+  const [type,setType] = useState(flaw?.type || FLAW_TYPES[0]);
+  const [description,setDescription] = useState(flaw?.description || '');
+  const [linkedProjectId,setLinkedProjectId] = useState(flaw?.projectId || projectId || '');
+  const activeProjects = state.projects.filter(p=>p.status==='active');
+  const submit = () => {
+    if(!description.trim()) return;
+    const item = {
+      id: flaw?.id || uid(),
+      date: flaw?.date || today(),
+      type,
+      description,
+      resolved: flaw?.resolved || false,
+      resolvedDate: flaw?.resolvedDate || null,
+      sourceLogId: flaw?.sourceLogId || null,
+      sourceTaskId: flaw?.sourceTaskId || null,
+      sourcePlanDate: flaw?.sourcePlanDate || null,
+      projectId: linkedProjectId || null,
+    };
+    update(s => ({
+      ...s,
+      flaws: editing ? s.flaws.map(f=>f.id===item.id ? item : f) : [...s.flaws, item]
+    }));
+    onClose();
+  };
+  return (
+    <Modal title={editing ? '编辑思维缺陷' : '记录思维缺陷'} onClose={onClose}>
+      <Card border="#fca5a5" style={{background:'#fef2f2',marginBottom:12}}>
+        <div style={{fontSize:12,color:'#991b1b',lineHeight:1.7}}>不要写“论证不够强”。要写成可修复对象：在哪个论证里、哪一步、哪个概念、为什么失效、下次怎么改。</div>
+      </Card>
+      <FieldGroup label="缺陷类型"><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{FLAW_TYPES.map(t => <button key={t} onClick={()=>setType(t)} style={{...styles.chip,cursor:'pointer',borderColor:type===t?'#dc2626':'#e2e8f0',color:type===t?'#dc2626':'#64748b',background:type===t?'#fef2f2':'#fff'}}>{t}</button>)}</div></FieldGroup>
+      {activeProjects.length > 0 && <FieldGroup label="关联项目"><select value={linkedProjectId} onChange={e=>setLinkedProjectId(e.target.value)} style={styles.input}><option value="">不关联</option>{activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></FieldGroup>}
+      <FieldGroup label="具体描述"><textarea value={description} onChange={e=>setDescription(e.target.value)} rows={5} style={styles.textarea} placeholder="例：在论证X时，我把‘自由’同时当作‘不受外部强迫’和‘能够做别的事’，导致前提与结论使用了不同定义。" /></FieldGroup>
+      <div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><PrimaryButton label={editing ? '保存修改' : '记录缺陷'} onClick={submit} style={{background:'#dc2626',borderColor:'#dc2626'}} /></div>
+    </Modal>
+  );
+}
+
+function GateModal({state,update,phaseTarget,onClose}){
+  const phase = PH[phaseTarget];
+  const [scores,setScores] = useState({...DEFAULT_GATE_SCORES});
+  const [artifactTitle,setArtifactTitle] = useState('');
+  const [artifactSummary,setArtifactSummary] = useState('');
+  const [strongestObjection,setStrongestObjection] = useState('');
+  const [revisionAfterObjection,setRevisionAfterObjection] = useState('');
+  const [defenseNotes,setDefenseNotes] = useState('');
+  const total = avg(Object.values(scores));
+  const passed = total >= 80;
+  const submit = () => {
+    if(!artifactTitle.trim() || !strongestObjection.trim() || !revisionAfterObjection.trim()) return;
+    update(s => ({
+      ...s,
+      gateScores:{...s.gateScores,[phaseTarget]:total},
+      phase: passed && s.phase === phaseTarget && phaseTarget < 4 ? s.phase + 1 : s.phase,
+      week: passed && s.phase === phaseTarget && phaseTarget < 4 ? 1 : s.week,
+      reviews:[...s.reviews, {
+        id: uid(),
+        date: today(),
+        type:'project',
+        title:`Phase ${phaseTarget} Gate`,
+        phase: phaseTarget,
+        week: s.week,
+        avgScore: total,
+        strengths:`考核产出：${artifactTitle}`,
+        weaknesses:`最强反驳：${strongestObjection}`,
+        nextGoal: passed ? `进入 Phase ${Math.min(4, phaseTarget+1)}` : '修订并重新提交 Gate',
+        verdict: passed ? '通过' : '需强化',
+        refLogIds: [],
+        refFlawIds: [],
+        projectId: null,
+      }]
+    }));
+    onClose();
+  };
+  return (
+    <Modal title={`Phase ${phaseTarget} 节点考核`} onClose={onClose}>
+      <Card style={{background:'#f0f9ff',borderColor:'#bae6fd',marginBottom:12}}>
+        <Label text="考核标准" />
+        <div style={{fontSize:12,color:'#0369a1',marginTop:6,lineHeight:1.7}}>{phase.gate}</div>
+      </Card>
+      <FieldGroup label="考核产出标题（必填）"><input value={artifactTitle} onChange={e=>setArtifactTitle(e.target.value)} style={styles.input} placeholder="例：自由意志相容论答辩稿" /></FieldGroup>
+      <FieldGroup label="产出摘要"><textarea value={artifactSummary} onChange={e=>setArtifactSummary(e.target.value)} rows={2} style={styles.textarea} placeholder="你到底提出了什么主张？" /></FieldGroup>
+      <FieldGroup label="最强反驳（必填）"><textarea value={strongestObjection} onChange={e=>setStrongestObjection(e.target.value)} rows={2} style={styles.textarea} placeholder="AI/对手给出的最强攻击是什么？" /></FieldGroup>
+      <FieldGroup label="回应后如何修订（必填）"><textarea value={revisionAfterObjection} onChange={e=>setRevisionAfterObjection(e.target.value)} rows={2} style={styles.textarea} placeholder="你如何真正修改论证，而不是嘴硬？" /></FieldGroup>
+      <FieldGroup label="答辩记录"><textarea value={defenseNotes} onChange={e=>setDefenseNotes(e.target.value)} rows={2} style={styles.textarea} placeholder="口头答辩中暴露了什么问题？" /></FieldGroup>
+      <FieldGroup label="评分">
+        {GATE_DIMS.map(d => <div key={d.k} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}><span style={{fontSize:12,color:'#64748b'}}>{d.l}</span><span style={{fontSize:12,fontWeight:700,color:scoreColor(scores[d.k])}}>{scores[d.k]}</span></div><div style={{fontSize:11,color:'#94a3b8',marginBottom:3}}>{d.d}</div><input type="range" min="0" max="100" value={scores[d.k]} onChange={e=>setScores(p=>({...p,[d.k]:+e.target.value}))} style={{width:'100%',accentColor:scoreColor(scores[d.k])}} /></div>)}
+      </FieldGroup>
+      <div style={{textAlign:'center',padding:12,borderRadius:10,background:scoreBg(total),marginBottom:12}}>
+        <div style={{fontSize:42,fontWeight:800,color:scoreColor(total)}}>{total}</div>
+        <div style={{fontSize:14,fontWeight:700,color:passed ? '#16a34a' : '#dc2626'}}>{passed ? '✓ 通过' : '✗ 未达标（需≥80）'}</div>
+      </div>
+      <div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><PrimaryButton label={passed ? '确认通关' : '记录未通过'} onClick={submit} style={{background:passed ? '#16a34a' : '#dc2626',borderColor:passed ? '#16a34a' : '#dc2626'}} /></div>
+    </Modal>
+  );
+}
+  function ConfirmModal({title,message,onOk,onClose}){
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div style={{fontSize:14,color:'#374151',lineHeight:1.8,marginBottom:20}}>{message}</div>
+      <div style={styles.modalActions}><GhostButton label="取消" onClick={onClose} /><DangerButton label="确认" onClick={onOk} /></div>
+    </Modal>
+  );
+}
+
+function Modal({title,children,onClose}){
+  return ReactDOM.createPortal(
+    <div style={styles.overlay} onClick={e=>e.target===e.currentTarget && onClose()}>
+      <div style={styles.modal}>
+        <div style={styles.modalHeader}><div style={{fontWeight:700,fontSize:15}}>{title}</div><button onClick={onClose} style={styles.closeBtn}>✕</button></div>
+        <div style={styles.modalBody}>{children}</div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function PageHeader({title,sub,action}){ return <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:14}}><div><div style={{fontSize:20,fontWeight:700,color:'#1e293b'}}>{title}</div><div style={{fontSize:12,color:'#94a3b8',marginTop:2}}>{sub}</div></div>{action && <div>{action}</div>}</div>; }
+function Card({children,style,border,onClick}){ return <div onClick={onClick} style={{...styles.card,borderColor:border || '#e2e8f0',...style}}>{children}</div>; }
+function Label({text}){ return <div style={{fontSize:10,letterSpacing:'.08em',color:'#94a3b8',textTransform:'uppercase',fontWeight:600}}>{text}</div>; }
+function Small({text,style}){ return <div style={{fontSize:11,color:'#94a3b8',...style}}>{text}</div>; }
+function Progress({value,color,style}){ return <div style={{background:'#f1f5f9',height:6,borderRadius:4,overflow:'hidden',...style}}><div style={{width:`${clamp(value,0,100)}%`,height:'100%',background:color,borderRadius:4}}></div></div>; }
+function PrimaryButton({label,onClick,style}){ return <button onClick={onClick} style={{...styles.primaryBtn,...style}}>{label}</button>; }
+function GhostButton({label,onClick,style}){ return <button onClick={onClick} style={{...styles.ghostBtn,...style}}>{label}</button>; }
+function DangerButton({label,onClick,style}){ return <button onClick={onClick} style={{...styles.dangerBtn,...style}}>{label}</button>; }
+function FieldGroup({label,children}){ return <div style={{marginBottom:12}}><FieldLabel text={label} />{children}</div>; }
+function FieldLabel({text}){ return <div style={{fontSize:11,color:'#64748b',letterSpacing:'.05em',textTransform:'uppercase',fontWeight:600,marginBottom:5}}>{text}</div>; }
+function Empty({text}){ return <div style={{padding:'24px 0',textAlign:'center',fontSize:13,color:'#cbd5e1',fontStyle:'italic'}}>{text}</div>; }
+function Tag({text,color,bg,border}){ return <span style={{display:'inline-block',fontSize:10,padding:'2px 8px',borderRadius:20,border:`1px solid ${border || '#e2e8f0'}`,color:color || '#64748b',background:bg || '#fff'}}>{text}</span>; }
+function SectionTitle({text,color}){ return <div style={{fontSize:11,fontWeight:600,letterSpacing:'.08em',color:color || '#64748b',textTransform:'uppercase',margin:'8px 0'}}>{text}</div>; }
+function StatCard({title,value,sub,color,action,footer}){ return <Card><Label text={title} /><div style={{fontSize:34,fontWeight:800,color,margin:'4px 0'}}>{value}</div><Small text={sub} />{footer}{action && <div style={{marginTop:8}}>{action}</div>}</Card>; }
+function MiniMetric({title,value,color}){ return <Card style={{padding:'10px',textAlign:'center'}}><Label text={title} /><div style={{fontSize:18,fontWeight:800,color,marginTop:4}}>{value}</div></Card>; }
+function MiniLine({points,color,wide}){
+  if(!points || points.length === 0) return null;
+  const w = wide ? 280 : 120;
+  const h = wide ? 56 : 36;
+  const mx = Math.max(...points, 100);
+  if(points.length === 1){
+    return <svg width={w} height={h}><circle cx={w/2} cy={h - points[0]/mx*h} r="3" fill={color} /></svg>;
+  }
+  const pts = points.map((v,i)=>`${(i/(points.length-1))*w},${h - (v/mx)*h}`).join(' ');
+  return <svg width={w} height={h} style={{display:'block',maxWidth:'100%'}}><polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{points.map((v,i)=><circle key={i} cx={(i/(points.length-1))*w} cy={h - (v/mx)*h} r="2.5" fill={color} />)}</svg>;
+}
+
+const styles = {
+  root:{minHeight:'100vh',background:'#f8fafc',color:'#1e293b'},
+  header:{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:10},
+  nav:{display:'flex',overflowX:'auto',background:'#fff',borderBottom:'1px solid #e2e8f0'},
+  navBtn:{padding:'11px 14px',border:'none',background:'none',fontSize:11,color:'#64748b',whiteSpace:'nowrap',borderBottom:'2px solid transparent'},
+  navBtnActive:{color:'#1d4ed8',borderBottomColor:'#1d4ed8',background:'#eff6ff'},
+  main:{maxWidth:860,margin:'0 auto',padding:'14px 14px 80px'},
+  card:{background:'#fff',border:'1px solid #e2e8f0',padding:14,borderRadius:10,boxShadow:'0 1px 3px rgba(0,0,0,.04)'},
+  grid2:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:12},
+  grid3:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12},
+  grid4:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12},
+  chip:{border:'1px solid #e2e8f0',padding:'4px 9px',borderRadius:20,fontSize:11,color:'#64748b',background:'#fff'},
+  input:{width:'100%',background:'#f8fafc',border:'1px solid #e2e8f0',color:'#1e293b',padding:'9px 11px',fontSize:14,borderRadius:8},
+  textarea:{width:'100%',background:'#f8fafc',border:'1px solid #e2e8f0',color:'#1e293b',padding:'9px 11px',fontSize:14,borderRadius:8},
+  primaryBtn:{background:'#1d4ed8',border:'1px solid #1d4ed8',color:'#fff',padding:'8px 16px',borderRadius:8,fontSize:13},
+  ghostBtn:{background:'#fff',border:'1px solid #e2e8f0',color:'#64748b',padding:'7px 14px',borderRadius:8,fontSize:13},
+  dangerBtn:{background:'#fef2f2',border:'1px solid #fca5a5',color:'#dc2626',padding:'7px 14px',borderRadius:8,fontSize:13},
+  overlay:{position:'fixed',inset:0,background:'rgba(15,23,42,.52)',display:'flex',alignItems:'center',justifyContent:'center',padding:16,zIndex:1000},
+  modal:{width:'100%',maxWidth:620,maxHeight:'90vh',display:'flex',flexDirection:'column',background:'#fff',border:'1px solid #e2e8f0',borderRadius:14,boxShadow:'0 20px 60px rgba(0,0,0,.15)'},
+  modalHeader:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 18px',borderBottom:'1px solid #f1f5f9'},
+  closeBtn:{border:'none',background:'none',fontSize:18,color:'#94a3b8'},
+  modalBody:{padding:18,overflowY:'auto'},
+  modalActions:{display:'flex',justifyContent:'flex-end',gap:8,marginTop:12},
+  selectorBox:{maxHeight:120,overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:8,padding:8,background:'#fff'},
+  checkRow:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',cursor:'pointer'},
+  rowSep:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #f1f5f9'},
+  tabbar:{display:'flex',gap:0,borderBottom:'1px solid #e2e8f0',marginBottom:14,overflowX:'auto'},
+  tabBtn:{padding:'8px 14px',background:'none',border:'none',borderBottom:'2px solid transparent',fontSize:12,color:'#64748b',whiteSpace:'nowrap'},
+  tabBtnActive:{color:'#1d4ed8',borderBottomColor:'#1d4ed8',fontWeight:600},
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App /></ErrorBoundary>);
+</script>
+</body>
+</html>
